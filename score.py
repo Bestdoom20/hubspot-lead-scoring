@@ -147,6 +147,7 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--selftest", action="store_true", help="run the offline self-check and exit")
+    ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"))
     args = ap.parse_args()
     if args.selftest:
         return selftest()
@@ -156,6 +157,31 @@ def main():
     print("tiers:", dict(sorted(Counter(r["tier"] for r in rows).items())))
     for r in rows[:10]:
         print(f"{r['tier']} {r['score']:>3}  {r['name']} ({r['company']})  ->  {r['next_step']}")
+    report(rows, args.out)
+
+
+def report(rows, out):
+    """Write the full ranking as CSV and a short pipeline summary as markdown."""
+    os.makedirs(out, exist_ok=True)
+    cols = ["id", "name", "company", "title", "role", "status", "stage", "fit", "engagement", "score", "tier", "next_step", "why"]
+    with open(f"{out}/scores.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+    tiers = Counter(r["tier"] for r in rows)
+    by_stage = Counter((r["stage"] or "no deal", r["tier"]) for r in rows)
+    lines = [f"# Pipeline report, {date.today()}", "", f"{len(rows)} contacts scored.", "",
+             "| Tier | Contacts |", "|---|---|"] + [f"| {t} | {tiers[t]} |" for t, _ in TIERS]
+    lines += ["", "## By deal stage", "", "| Stage | A | B | C |", "|---|---|---|---|"]
+    for s in sorted({k[0] for k in by_stage}):
+        lines.append(f"| {s} | " + " | ".join(str(by_stage[(s, t)]) for t, _ in TIERS) + " |")
+    lines += ["", "## Next steps", "", "| Step | Contacts |", "|---|---|"]
+    lines += [f"| {s} | {n} |" for s, n in Counter(r["next_step"] for r in rows).most_common()]
+    lines += ["", "## Top 10", "", "| Tier | Score | Name | Company | Next step |", "|---|---|---|---|---|"]
+    lines += [f"| {r['tier']} | {r['score']} | {r['name']} | {r['company']} | {r['next_step']} |" for r in rows[:10]]
+    with open(f"{out}/pipeline-report.md", "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"wrote {out}/scores.csv and {out}/pipeline-report.md")
 
 
 if __name__ == "__main__":
