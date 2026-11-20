@@ -144,9 +144,25 @@ def selftest():
     print("selftest ok: 11 checks passed")
 
 
+WRITE_PROPS = {"lead_score": "score", "lead_tier": "tier", "lead_next_step": "next_step"}
+
+
+def write_back(rows):
+    """Push score, tier and next step to contact properties. The properties must already exist."""
+    have = {p["name"] for p in api("GET", "/crm/v3/properties/contacts")["results"]}
+    missing = sorted(set(WRITE_PROPS) - have)
+    if missing:
+        sys.exit(f"--write needs these contact properties to exist first (this tool never creates them): {', '.join(missing)}")
+    for i in range(0, len(rows), 100):  # batch update takes at most 100 records
+        api("POST", "/crm/v3/objects/contacts/batch/update", {"inputs": [
+            {"id": r["id"], "properties": {p: str(r[k]) for p, k in WRITE_PROPS.items()}} for r in rows[i:i + 100]]})
+    print(f"wrote {', '.join(WRITE_PROPS)} on {len(rows)} contacts")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--selftest", action="store_true", help="run the offline self-check and exit")
+    ap.add_argument("--write", action="store_true", help="also write score, tier and next step to HubSpot (default is a dry run)")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"))
     args = ap.parse_args()
     if args.selftest:
@@ -158,6 +174,8 @@ def main():
     for r in rows[:10]:
         print(f"{r['tier']} {r['score']:>3}  {r['name']} ({r['company']})  ->  {r['next_step']}")
     report(rows, args.out)
+    if args.write:
+        write_back(rows)
 
 
 def report(rows, out):
