@@ -1,0 +1,44 @@
+{
+  "score_tiers": {
+    "A": 60,
+    "B": 35
+  },
+  "cycle_days": 30,
+  "reentry_days": 90,
+  "park_stages": [
+    "researching",
+    "connecting"
+  ],
+  "people_target": 3,
+  "email_days": [
+    1,
+    7
+  ],
+  "add_people_day": 7,
+  "followup_day": 7,
+  "phone_day": 14,
+  "last_touch_day": 21,
+  "channel_order": [
+    "linkedin_request",
+    "linkedin_message",
+    "email",
+    "phone"
+  ],
+  "stage_points": {
+    "call_booked": 0,
+    "dm_reached": 40,
+    "warming": 35,
+    "champion_in": 25,
+    "connecting": 10,
+    "researching": 0
+  },
+  "prospect_floors": {
+    "A": 50,
+    "B": 25
+  },
+  "exclude_countries": [],
+  "revenue_high": 1000000,
+  "revenue_mid": 100000,
+  "team_min": 5,
+  "team_max": 50
+}

@@ -5,9 +5,44 @@ from collections import Counter
 from datetime import date, datetime
 
 API = "https://api.hubapi.com"
+
+# Everything tunable. config.json (optional, same keys) overrides these; config.example.json mirrors them.
+DEFAULTS = {
+    "score_tiers": {"A": 60, "B": 35},          # contact score floors, below B is C
+    "cycle_days": 30,                           # extended schedule: the account is parked on this day
+    "reentry_days": 90,                         # parked accounts come back this many days after that
+    "park_stages": ["researching", "connecting"],  # only parked if nothing has happened yet
+    "people_target": 3,                         # decision maker plus two others (production)
+    "email_days": [1, 7],                       # email 1 and email 2 (production)
+    "add_people_day": 7,                        # no accepts by this day: add two more people (production)
+    "followup_day": 7,                          # follow-up message to anyone already messaged (production)
+    "phone_day": 14,                            # extended schedule, not yet in production
+    "last_touch_day": 21,                       # extended schedule, not yet in production
+    "channel_order": ["linkedin_request", "linkedin_message", "email", "phone"],
+    "stage_points": {"call_booked": 0, "dm_reached": 40, "warming": 35, "champion_in": 25,
+                     "connecting": 10, "researching": 0},   # added to the best contact score for account priority
+    "prospect_floors": {"A": 50, "B": 25},      # prospect score floors, below B is C
+    "exclude_countries": [],                    # prospects from these countries are marked excluded
+    "revenue_high": 1000000, "revenue_mid": 100000,
+    "team_min": 5, "team_max": 50,              # sweet-spot team size
+}
+
+
+def load_config():
+    """Defaults, overridden by config.json next to this file. Unknown keys are an error."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    over = json.load(open(path)) if os.path.exists(path) else {}
+    bad = set(over) - set(DEFAULTS)
+    if bad:
+        sys.exit(f"{path}: unknown keys {sorted(bad)}")
+    return {**DEFAULTS, **over}
+
+
+CFG = load_config()
 CONTACT_PROPS = ["firstname", "lastname", "jobtitle", "associatedcompanyid", "omvion_role",
-                 "omvion_outreach_status", "omvion_conversed", "omvion_last_touch"]
-COMPANY_PROPS = ["name", "omvion_people_replied"]
+                 "omvion_outreach_status", "omvion_conversed", "omvion_last_touch",
+                 "omvion_touch_log", "email", "phone"]   # log, email, phone are read by `cycle`
+COMPANY_PROPS = ["name", "omvion_people_replied", "omvion_cycle_stage", "omvion_cycle_start", "omvion_next_action"]
 
 
 def api(method, path, body=None):
@@ -77,7 +112,7 @@ RULES = [
     ("engagement", "deal stage: Connecting",      3, lambda c: c["stage"] == "Connecting"),
     ("engagement", "someone else at the company replied", 5, lambda c: c["colleague_replied"]),
 ]
-TIERS = [("A", 60), ("B", 35), ("C", 0)]  # minimum score for each tier, first match wins
+TIERS = [("A", CFG["score_tiers"]["A"]), ("B", CFG["score_tiers"]["B"]), ("C", 0)]  # minimum score per tier, first match wins
 
 # First matching row gives the suggested next step.
 NEXT_STEPS = [
