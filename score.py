@@ -51,11 +51,83 @@ def load():
     return contacts, companies, {k: v[1] for k, v in best.items()}
 
 
+SENIOR = re.compile(r"\b(chief|ceo|cto|coo|cpo|vp|vice president|president|head|director|founder|owner|partner)\b", re.I)
+MID = re.compile(r"\b(lead|principal|senior|sr|manager|producer)\b", re.I)
+
+# The scoring model. One row per rule: (group, what it checks, points, test on a normalised contact).
+# Only fields that carry data in the portal are used. Company type, industry and size are empty there.
+RULES = [
+    ("fit", "role: decision_maker",             30, lambda c: c["role"] == "decision_maker"),
+    ("fit", "role: champion",                   20, lambda c: c["role"] == "champion"),
+    ("fit", "role: influencer",                 10, lambda c: c["role"] == "influencer"),
+    ("fit", "role: gatekeeper",                  5, lambda c: c["role"] == "gatekeeper"),
+    ("fit", "title is senior (chief, VP, head, director, founder)", 15, lambda c: bool(SENIOR.search(c["title"]))),
+    ("fit", "title is mid (lead, principal, senior, manager)",       8, lambda c: not SENIOR.search(c["title"]) and bool(MID.search(c["title"]))),
+    ("engagement", "outreach: replied",          30, lambda c: c["status"] == "replied"),
+    ("engagement", "outreach: messaged",         15, lambda c: c["status"] == "messaged"),
+    ("engagement", "outreach: requested",         8, lambda c: c["status"] == "requested"),
+    ("engagement", "conversation held",          10, lambda c: c["conversed"]),
+    ("engagement", "touched in last 7 days",     10, lambda c: c["days"] is not None and c["days"] <= 7),
+    ("engagement", "touched 8 to 21 days ago",    5, lambda c: c["days"] is not None and 8 <= c["days"] <= 21),
+    ("engagement", "deal stage: Pilot",          25, lambda c: c["stage"] == "Pilot"),
+    ("engagement", "deal stage: Call booked",    20, lambda c: c["stage"] == "Call booked"),
+    ("engagement", "deal stage: Decision maker reached", 15, lambda c: c["stage"] == "Decision maker reached"),
+    ("engagement", "deal stage: Warming (replied)",      10, lambda c: c["stage"] == "Warming (replied)"),
+    ("engagement", "deal stage: Champion in",     8, lambda c: c["stage"] == "Champion in"),
+    ("engagement", "deal stage: Connecting",      3, lambda c: c["stage"] == "Connecting"),
+    ("engagement", "someone else at the company replied", 5, lambda c: c["colleague_replied"]),
+]
+TIERS = [("A", 60), ("B", 35), ("C", 0)]  # minimum score for each tier, first match wins
+
+# First matching row gives the suggested next step.
+NEXT_STEPS = [
+    (lambda c: c["status"] == "replied",                       "Reply and propose a call"),
+    (lambda c: c["status"] == "messaged" and (c["days"] or 99) > 14, "Send a follow-up, the last message is over 2 weeks old"),
+    (lambda c: c["status"] == "messaged",                      "Wait for a reply, follow up in 7 days"),
+    (lambda c: c["status"] == "requested" and (c["days"] or 99) > 21, "Connection request is stale, re-send or find a second contact"),
+    (lambda c: c["status"] == "requested",                     "Wait for the connection to be accepted"),
+    (lambda c: c["role"] in ("decision_maker", "champion"),    "Send a connection request"),
+    (lambda c: True,                                           "Research the person or park"),
+]
+
+
+def normalise(raw, companies, stages, today):
+    """HubSpot contact record -> the flat dict the rules read."""
+    p = raw["properties"]
+    co = companies.get(p.get("associatedcompanyid") or "", {})
+    touch = p.get("omvion_last_touch")
+    return {
+        "id": raw["id"], "name": f"{p.get('firstname') or ''} {p.get('lastname') or ''}".strip(),
+        "company": co.get("name") or "", "title": p.get("jobtitle") or "",
+        "role": p.get("omvion_role") or "unknown", "status": p.get("omvion_outreach_status") or "",
+        "conversed": p.get("omvion_conversed") == "true",
+        "days": (today - datetime.strptime(touch, "%Y-%m-%d").date()).days if touch else None,
+        "stage": stages.get(p.get("associatedcompanyid") or ""),
+        "colleague_replied": int(co.get("omvion_people_replied") or 0) > 0,
+    }
+
+
+def score(c):
+    """Return the contact with fit, engagement, score, tier, next step and the rules that fired."""
+    hit = [r for r in RULES if r[3](c)]
+    fit = sum(r[2] for r in hit if r[0] == "fit")
+    eng = sum(r[2] for r in hit if r[0] == "engagement")
+    total = fit + eng
+    return {**c, "fit": fit, "engagement": eng, "score": total,
+            "tier": next(t for t, floor in TIERS if total >= floor),
+            "next_step": next(text for test, text in NEXT_STEPS if test(c)),
+            "why": "; ".join(f"{r[1]} +{r[2]}" for r in hit)}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.parse_args()
+    args = ap.parse_args()
     contacts, companies, stages = load()
-    print(f"{len(contacts)} contacts, {len(companies)} companies, {len(stages)} companies with a deal")
+    rows = sorted((score(normalise(r, companies, stages, date.today())) for r in contacts),
+                  key=lambda r: -r["score"])
+    print("tiers:", dict(sorted(Counter(r["tier"] for r in rows).items())))
+    for r in rows[:10]:
+        print(f"{r['tier']} {r['score']:>3}  {r['name']} ({r['company']})  ->  {r['next_step']}")
 
 
 if __name__ == "__main__":
