@@ -1,0 +1,11 @@
+name,domain,country,employees,revenue
+Northwind Sample Games,example.com,Canada,12,2400000
+Harbor Light Studio,example.org,Canada,25,650000
+Paper Kite Interactive,example.com,United States,8,150000
+Quiet Orchard Games,example.org,Norway,3,40000
+Ironwood Sample Works,example.com,Germany,60,5200000
+Lantern Hill Studio,lanternhill.example.com,Canada,15,300000
+Copper Fox Games,copperfox.example.org,Canada,6,
+Tidepool Example Labs,example.com,Australia,,
+Blue Heron Sample,not a domain,Canada,10,900000
+Mossy Gate Studio,example.org,Canada,40,1100000
