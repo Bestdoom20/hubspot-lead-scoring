@@ -176,7 +176,7 @@ def selftest():
                                      "omvion_last_touch": "2026-11-10", "omvion_role": "champion"}}
     n = normalise(raw, {"5": {"name": "X", "omvion_people_replied": "1"}}, {"5": "Pilot"}, date(2026, 11, 20))
     assert (n["days"], n["stage"], n["conversed"], n["colleague_replied"]) == (10, "Pilot", True, True), n
-    print("selftest ok: 11 checks passed")
+    return 11
 
 
 WRITE_PROPS = {"lead_score": "score", "lead_tier": "tier", "lead_next_step": "next_step"}
@@ -196,12 +196,21 @@ def write_back(rows):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("cmd", nargs="?", default="score", choices=["score", "cycle", "today", "prospects"],
+                    help="score (default): rank contacts. cycle: stage and touch plan per account. today: the daily list. prospects <csv>: tier a company list")
+    ap.add_argument("file", nargs="?", help="prospects: the input CSV")
     ap.add_argument("--selftest", action="store_true", help="run the offline self-check and exit")
     ap.add_argument("--write", action="store_true", help="also write score, tier and next step to HubSpot (default is a dry run)")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "out"))
     args = ap.parse_args()
+    import cycle, prospects   # after config is loaded, they read score.CFG
     if args.selftest:
-        return selftest()
+        n = selftest() + cycle.selftest() + prospects.selftest()
+        return print(f"selftest ok: {n} checks passed")
+    if args.cmd in ("cycle", "today"):
+        return getattr(cycle, "cmd_" + args.cmd)(args.out)
+    if args.cmd == "prospects":
+        return prospects.cmd_prospects(args.file or sys.exit("prospects needs a CSV file"), args.out)
     contacts, companies, stages = load()
     rows = sorted((score(normalise(r, companies, stages, date.today())) for r in contacts),
                   key=lambda r: -r["score"])
