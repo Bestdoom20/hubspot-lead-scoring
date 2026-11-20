@@ -119,9 +119,37 @@ def score(c):
             "why": "; ".join(f"{r[1]} +{r[2]}" for r in hit)}
 
 
+def selftest():
+    """Invented fixtures, no network. Fails if the rules, tiers or next steps break."""
+    base = dict(id="0", name="Sample Person", company="Sample Co", title="", role="unknown",
+                status="", conversed=False, days=None, stage=None, colleague_replied=False)
+    hot = score({**base, "title": "VP of Publishing", "role": "decision_maker", "status": "replied",
+                 "conversed": True, "days": 2, "stage": "Decision maker reached"})
+    assert (hot["fit"], hot["engagement"], hot["tier"]) == (45, 65, "A"), hot
+    assert hot["next_step"] == "Reply and propose a call"
+    cold = score(base)
+    assert (cold["score"], cold["tier"]) == (0, "C"), cold
+    assert cold["next_step"] == "Research the person or park"
+    mid = score({**base, "title": "Senior Producer", "role": "champion", "status": "requested", "days": 10})
+    assert (mid["score"], mid["tier"]) == (41, "B"), mid          # 20 + 8 + 8 + 5
+    assert score({**base, "title": "Head of Studio Lead"})["fit"] == 15   # senior wins, not both
+    assert score({**base, "days": 7})["engagement"] == 10 and score({**base, "days": 8})["engagement"] == 5
+    assert score({**base, "days": 22})["engagement"] == 0              # recency boundaries
+    assert score({**base, "status": "requested", "days": 30})["next_step"].startswith("Connection request is stale")
+    assert score({**base, "role": "gatekeeper", "colleague_replied": True})["score"] == 10
+    raw = {"id": "9", "properties": {"firstname": "A", "associatedcompanyid": "5", "omvion_conversed": "true",
+                                     "omvion_last_touch": "2026-11-10", "omvion_role": "champion"}}
+    n = normalise(raw, {"5": {"name": "X", "omvion_people_replied": "1"}}, {"5": "Pilot"}, date(2026, 11, 20))
+    assert (n["days"], n["stage"], n["conversed"], n["colleague_replied"]) == (10, "Pilot", True, True), n
+    print("selftest ok: 11 checks passed")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--selftest", action="store_true", help="run the offline self-check and exit")
     args = ap.parse_args()
+    if args.selftest:
+        return selftest()
     contacts, companies, stages = load()
     rows = sorted((score(normalise(r, companies, stages, date.today())) for r in contacts),
                   key=lambda r: -r["score"])
